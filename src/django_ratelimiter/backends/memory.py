@@ -11,15 +11,25 @@
 #     }
 
 
+from threading import Lock
+
 class MemoryBackend:
-    
     def __init__(self):
         self._store = {}
-    
+        self._lock = Lock()     
+        self._locks = {}
+
     def get(self, key):
-        return self._store.get(key)
-    
-    
-    def set(self, key, state) :
-        self._store[key] = state
-        
+        with self._lock:
+            return self._store.get(key)
+
+    def set(self, key, state):
+        with self._lock:
+            self._store[key] = state
+
+    def lock(self, key):
+        with self._lock:
+            if key not in self._locks:
+                self._locks[key] = Lock()
+
+            return self._locks[key]

@@ -30,7 +30,6 @@ class FixedWindow:
         state = self.backend.get(key)
         
 
-        window_end = (current_window + 1) * self.window_size
         
         
         if state is None:

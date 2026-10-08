@@ -2,7 +2,6 @@ import math
 from time import time
 
 
-
 class FixedWindow:
     
     def __init__(self, limit, window_size, backend):
@@ -24,37 +23,39 @@ class FixedWindow:
         
         
     def check(self, key):
-        now = time()
-        current_window = int(now // self.window_size)
-        window_end = (current_window + 1) * self.window_size
-        state = self.backend.get(key)
         
+        
+        with self.backend.lock(key):
+            now = time()
+            current_window = int(now // self.window_size)
+            window_end = (current_window + 1) * self.window_size
+            
+            state = self.backend.get(key)
+        
+            
+            if state is None:
+                new_state = {
+                    "window_id" : current_window,
+                    "request_count" : 1
+                }
+                self.backend.set(key, new_state)
+                
+                return {"allowed" : True}
+            
+            if state['window_id'] != current_window:
+                new_state = {
+                    "window_id" : current_window,
+                    "request_count" : 1
+                }
+                self.backend.set(key, new_state)
+                
+                return {"allowed" : True}
+            
+            if state['request_count'] >= self.limit:
+                retry_after = math.ceil(window_end - now)
+                return {"allowed" : False, "retry_after" : retry_after}
 
-        
-        
-        if state is None:
-            new_state = {
-                "window_id" : current_window,
-                "request_count" : 1
-            }
-            self.backend.set(key, new_state)
+            state["request_count"] += 1
+            self.backend.set(key, state)
             
             return {"allowed" : True}
-        
-        if state['window_id'] != current_window:
-            new_state = {
-                "window_id" : current_window,
-                "request_count" : 1
-            }
-            self.backend.set(key, new_state)
-            
-            return {"allowed" : True}
-        
-        if state['request_count'] >= self.limit:
-            retry_after = math.ceil(window_end - now)
-            return {"allowed" : False, "retry_after" : retry_after}
-
-        state["request_count"] += 1
-        self.backend.set(key, state)
-        
-        return {"allowed" : True}

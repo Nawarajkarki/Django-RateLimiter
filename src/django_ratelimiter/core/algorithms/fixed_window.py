@@ -7,7 +7,12 @@ class FixedWindow:
     
     def __init__(self, limit, window_size, backend):
         
-        if not isinstance(limit, int) or not isinstance(window_size, int):
+        if (
+            isinstance(limit, bool)
+            or isinstance(window_size, bool)
+            or not isinstance(limit, int)
+            or not isinstance(window_size, int)
+        ):
             raise TypeError("limit and window_size must be integers")
 
         if limit <= 0 or window_size <= 0:
@@ -19,9 +24,9 @@ class FixedWindow:
         
         
     def check(self, key):
-        
-        current_window = int(time() // self.window_size)
-        
+        now = time()
+        current_window = int(now // self.window_size)
+        window_end = (current_window + 1) * self.window_size
         state = self.backend.get(key)
         
 
@@ -47,7 +52,7 @@ class FixedWindow:
             return {"allowed" : True}
         
         if state['request_count'] >= self.limit:
-            retry_after = math.ceil(window_end - time())
+            retry_after = math.ceil(window_end - now)
             return {"allowed" : False, "retry_after" : retry_after}
 
         state["request_count"] += 1

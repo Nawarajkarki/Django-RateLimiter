@@ -149,3 +149,37 @@ def test_multiple_keys(monkeypatch):
     
     
     
+    
+def test_rejected_response_includes_retry_after(monkeypatch):
+    monkeypatch.setattr(
+        "django_ratelimiter.core.algorithms.fixed_window.time",
+        lambda: 1000,
+    )
+
+    limiter = FixedWindow(limit=1, window_size=60, backend=MemoryBackend())
+
+    assert limiter.check("client-1") == {"allowed": True}
+    assert limiter.check("client-1") == {
+        "allowed": False,
+        "retry_after": 20,
+    }
+
+
+def test_retry_after_rounds_up_to_whole_seconds(monkeypatch):
+    monkeypatch.setattr(
+        "django_ratelimiter.core.algorithms.fixed_window.time",
+        lambda: 1005.2,
+    )
+
+    limiter = FixedWindow(limit=1, window_size=60, backend=MemoryBackend())
+
+    limiter.check("client-1")
+    result = limiter.check("client-1")
+
+    assert result["retry_after"] == 15
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_rejects_boolean_limit(value):
+    with pytest.raises(TypeError):
+        FixedWindow(limit=value, window_size=60, backend=MemoryBackend())

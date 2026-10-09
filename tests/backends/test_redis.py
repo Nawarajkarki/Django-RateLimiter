@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from django_ratelimiter.backends.redis import RedisBackend
 from django_ratelimiter.core.algorithms.fixed_window import FixedWindow
+from django_ratelimiter.core.algorithms.sliding_window_counter import SlidingWindowCounter
 
 
 @pytest.fixture
@@ -109,3 +110,48 @@ def test_concurrent_requests_do_not_exceed_limit_with_redis(
     state = redis_backend.get("client-1")
     assert state is not None
     assert state["request_count"] == limit
+    
+    
+    
+    
+
+
+def test_sliding_window_counter_uses_redis_backend(
+    redis_backend,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "django_ratelimiter.core.algorithms.sliding_window_counter.time",
+        lambda: 1012,
+    )
+
+    redis_backend.set(
+        "client-1",
+        {
+            "window_id": 101,
+            "previous_count": 5,
+            "current_count": 1,
+        },
+        timeout=30,
+    )
+
+    limiter = SlidingWindowCounter(
+        limit=6,
+        window_size=10,
+        backend=redis_backend,
+    )
+
+    assert limiter.check("client-1") == {"allowed": True}
+    assert redis_backend.get("client-1") == {
+        "window_id": 101,
+        "previous_count": 5,
+        "current_count": 2,
+    }
+
+    result = limiter.check("client-1")
+    assert result["allowed"] is False
+    assert redis_backend.get("client-1") == {
+        "window_id": 101,
+        "previous_count": 5,
+        "current_count": 2,
+    }

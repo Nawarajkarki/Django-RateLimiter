@@ -45,7 +45,10 @@ class FixedWindow:
                 "window_id": current_window,
                 "request_count": state["request_count"] + 1,
             }
-            return new_state, {"allowed": True}
-
+            timeout = math.ceil(window_end - now)
+            return new_state, {"allowed": True}, timeout
+            # return new_state, {"allowed": True}
+            
+            
         return self.backend.update(key, updater)
    

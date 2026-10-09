@@ -33,3 +33,14 @@ class MemoryBackend:
                 self._locks[key] = Lock()
 
             return self._locks[key]
+        
+        
+    def update(self, key, updater):
+        with self.lock(key):
+            state = self.get(key)
+            new_state, result = updater(state)
+
+            if new_state is not None:
+                self.set(key, new_state)
+
+            return result

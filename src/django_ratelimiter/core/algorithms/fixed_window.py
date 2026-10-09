@@ -21,41 +21,35 @@ class FixedWindow:
         self.window_size = window_size
         self.backend = backend
         
-        
     def check(self, key):
-        
-        
-        with self.backend.lock(key):
+        def updater(state):
             now = time()
             current_window = int(now // self.window_size)
             window_end = (current_window + 1) * self.window_size
-            
-            state = self.backend.get(key)
-        
-            
-            if state is None:
-                new_state = {
-                    "window_id" : current_window,
-                    "request_count" : 1
-                }
-                self.backend.set(key, new_state)
-                
-                return {"allowed" : True}
-            
-            if state['window_id'] != current_window:
-                new_state = {
-                    "window_id" : current_window,
-                    "request_count" : 1
-                }
-                self.backend.set(key, new_state)
-                
-                return {"allowed" : True}
-            
-            if state['request_count'] >= self.limit:
-                retry_after = math.ceil(window_end - now)
-                return {"allowed" : False, "retry_after" : retry_after}
+            timeout = math.ceil(window_end - now)
 
-            state["request_count"] += 1
-            self.backend.set(key, state)
+            if state is None or state["window_id"] != current_window:
+                new_state = {
+                    "window_id": current_window,
+                    "request_count": 1,
+                }
+                return new_state, {"allowed": True}, timeout
+
+            if state["request_count"] >= self.limit:
+                return None, {
+                    "allowed": False,
+                    "retry_after": timeout,
+                    
+                }, None
+
+            new_state = {
+                "window_id": current_window,
+                "request_count": state["request_count"] + 1,
+            }
+            return new_state, {"allowed": True}, timeout
             
-            return {"allowed" : True}
+            
+        return self.backend.update(key, updater)
+
+
+

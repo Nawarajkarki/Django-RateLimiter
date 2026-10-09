@@ -53,3 +53,26 @@ def test_multiple_independent_keys():
     
     assert backend.get("keya") == "valuea"
     assert backend.get("keyb") == "valueb"
+
+
+
+def test_get_returns_none_after_timeout(monkeypatch):
+    current_time = [100.0]
+
+    monkeypatch.setattr(
+        "django_ratelimiter.backends.memory.monotonic",
+        lambda: current_time[0],
+    )
+
+    backend = MemoryBackend()
+    state = {"window_id": 1, "request_count": 1}
+
+    backend.set("client-1", state, timeout=5)
+
+    assert backend.get("client-1") == state
+
+    current_time[0] = 104.9
+    assert backend.get("client-1") == state
+
+    current_time[0] = 105.0
+    assert backend.get("client-1") is None

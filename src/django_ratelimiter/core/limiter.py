@@ -1,5 +1,7 @@
+from django.core.exceptions import ImproperlyConfigured
 
 from django_ratelimiter.core.algorithms.fixed_window import FixedWindow
+
 
 
 def build_limiter(config, backend):
@@ -24,4 +26,4 @@ def build_limiter(config, backend):
     #     pass
     
     
-    raise ValueError(f"Unsupported rate-limit algorithm: {algorithm}")
+    raise ImproperlyConfigured(f"Unsupported rate-limit algorithm: {algorithm}")

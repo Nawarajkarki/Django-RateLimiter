@@ -1,3 +1,8 @@
+import os
+import uuid
+
+import pytest
+
 from django.http import HttpResponse
 from django.test import RequestFactory
 
@@ -10,6 +15,7 @@ def configure_test_middleware(settings, monkeypatch, *, limit):
         "LIMIT": limit,
         "WINDOW_SECONDS": 60,
         "KEY_FUNCTION": "unused.in.test",
+        "BACKEND" : "memory"
     }
 
     # Keep the clock fixed so requests stay in the same window.
@@ -24,6 +30,41 @@ def configure_test_middleware(settings, monkeypatch, *, limit):
         lambda dotted_path: lambda request: "ip:127.0.0.1",
     )
 
+
+@pytest.mark.skipif(
+    not os.getenv("RATE_LIMITER_REDIS_URL"),
+    reason="Set RATE_LIMITER_REDIS_URL to run the Redis middleware test",
+)
+
+def test_middleware_uses_redis(settings, monkeypatch):
+    key = f"ip:{uuid.uuid4().hex}"
+
+    settings.RATE_LIMITER = {
+        "ALGORITHM": "fixed_window",
+        "LIMIT": 1,
+        "WINDOW_SECONDS": 60,
+        "KEY_FUNCTION": "unused.in.test",
+        "BACKEND": "redis",
+        "REDIS_URL": os.environ["RATE_LIMITER_REDIS_URL"],
+    }
+
+    monkeypatch.setattr(
+        "django_ratelimiter.core.algorithms.fixed_window.time",
+        lambda: 1000,
+    )
+    monkeypatch.setattr(
+        "django_ratelimiter.integrations.middleware.import_string",
+        lambda dotted_path: lambda request: key,
+    )
+
+    middleware = RateLimitMiddleware(lambda request: HttpResponse("OK"))
+    request = RequestFactory().get("/")
+
+    assert middleware(request).status_code == 200
+    assert middleware(request).status_code == 429
+    
+    
+    
 
 def test_allowed_request_reaches_view(settings, monkeypatch):
     configure_test_middleware(settings, monkeypatch, limit=1)

@@ -15,6 +15,8 @@ RATE_LIMITER = {
     "LIMIT": 10,
     "WINDOW_SECONDS": 60,
     "KEY_FUNCTION": "myproject.ratelimit.get_rate_limit_key",
+    "BACKEND": "redis",  # "memory" or "redis"
+    "REDIS_URL": os.environ["RATE_LIMITER_REDIS_URL"],
 }
 ```
 

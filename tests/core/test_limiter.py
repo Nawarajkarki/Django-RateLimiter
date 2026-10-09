@@ -1,5 +1,7 @@
 import pytest
 
+from django.core.exceptions import ImproperlyConfigured
+
 from django_ratelimiter.backends.memory import MemoryBackend
 from django_ratelimiter.core.limiter import build_limiter
 from django_ratelimiter.core.algorithms.fixed_window import FixedWindow
@@ -29,5 +31,5 @@ def test_build_limiter_rejects_unimplemented_algorithms(algorithm):
         "WINDOW_SECONDS": 60,
     }
 
-    with pytest.raises(ValueError, match="Unsupported rate-limit algorithm"):
+    with pytest.raises(ImproperlyConfigured, match="Unsupported rate-limit algorithm"):
         build_limiter(config=config, backend=MemoryBackend())

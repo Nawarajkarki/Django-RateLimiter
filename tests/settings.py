@@ -9,7 +9,8 @@ DATABASES = {
 
 RATE_LIMITER = {
     "ALGORITHM": "fixed_window",
-    "LIMIT": 1,
+    "LIMIT": 10,
     "WINDOW_SECONDS": 60,
-    "KEY_FUNCTION": "unused.in.test",
+    "KEY_FUNCTION": "myproject.ratelimit.get_rate_limit_key",
+    "BACKEND": "memory",  # "memory" or "redis"
 }

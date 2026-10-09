@@ -183,3 +183,32 @@ def test_retry_after_rounds_up_to_whole_seconds(monkeypatch):
 def test_rejects_boolean_limit(value):
     with pytest.raises(TypeError):
         FixedWindow(limit=value, window_size=60, backend=MemoryBackend())
+
+
+
+def test_state_expires_when_fixed_window_ends(monkeypatch):
+    wall_clock = [1005.0]
+    monotonic_clock = [50.0]
+
+    monkeypatch.setattr(
+        "django_ratelimiter.core.algorithms.fixed_window.time",
+        lambda: wall_clock[0],
+    )
+    monkeypatch.setattr(
+        "django_ratelimiter.backends.memory.monotonic",
+        lambda: monotonic_clock[0],
+    )
+
+    backend = MemoryBackend()
+    limiter = FixedWindow(limit=2, window_size=60, backend=backend)
+
+    assert limiter.check("client-1") == {"allowed": True}
+    assert backend.get("client-1") is not None
+
+    # At wall-clock 1005, this window ends at 1020: 15 seconds remain.
+    monotonic_clock[0] = 64.9
+    assert backend.get("client-1") is not None
+
+    wall_clock[0] = 1020.0
+    monotonic_clock[0] = 65.0
+    assert backend.get("client-1") is None

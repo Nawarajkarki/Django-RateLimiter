@@ -12,20 +12,37 @@
 
 
 from threading import Lock
+from time import monotonic
+
 
 class MemoryBackend:
     def __init__(self):
         self._store = {}
         self._lock = Lock()     
         self._locks = {}
+        self._expires_at = {}
+
 
     def get(self, key):
         with self._lock:
+            expires_at = self._expires_at.get(key)
+            
+            if expires_at is not None and monotonic() >= expires_at:
+                self._store.pop(key, None)
+                self._expires_at.pop(key, None)
+                return None
+            
             return self._store.get(key)
-
-    def set(self, key, state):
+    
+    def set(self, key, state, timeout=None):
         with self._lock:
             self._store[key] = state
+
+            if timeout is None:
+                self._expires_at.pop(key, None)
+            else:
+                self._expires_at[key] = monotonic() + timeout
+                
 
     def lock(self, key):
         with self._lock:
@@ -34,13 +51,14 @@ class MemoryBackend:
 
             return self._locks[key]
         
-        
+    
+    
     def update(self, key, updater):
         with self.lock(key):
             state = self.get(key)
-            new_state, result = updater(state)
+            new_state, result, timeout = updater(state)
 
             if new_state is not None:
-                self.set(key, new_state)
+                self.set(key, new_state, timeout=timeout)
 
             return result

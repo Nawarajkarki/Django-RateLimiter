@@ -26,29 +26,30 @@ class FixedWindow:
             now = time()
             current_window = int(now // self.window_size)
             window_end = (current_window + 1) * self.window_size
+            timeout = math.ceil(window_end - now)
 
             if state is None or state["window_id"] != current_window:
                 new_state = {
                     "window_id": current_window,
                     "request_count": 1,
                 }
-                return new_state, {"allowed": True}
+                return new_state, {"allowed": True}, timeout
 
             if state["request_count"] >= self.limit:
-                retry_after = math.ceil(window_end - now)
                 return None, {
                     "allowed": False,
-                    "retry_after": retry_after,
-                }
+                    "retry_after": timeout,
+                    
+                }, None
 
             new_state = {
                 "window_id": current_window,
                 "request_count": state["request_count"] + 1,
             }
-            timeout = math.ceil(window_end - now)
             return new_state, {"allowed": True}, timeout
-            # return new_state, {"allowed": True}
             
             
         return self.backend.update(key, updater)
-   
+
+
+

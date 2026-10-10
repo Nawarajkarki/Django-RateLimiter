@@ -1,0 +1,103 @@
+import re
+from functools import wraps
+
+from django.conf import settings
+from django.http import HttpResponse
+from django.utils.module_loading import import_string
+
+from django_ratelimiter.core.limiter import build_limiter
+from django_ratelimiter.backends.factory import build_backend
+
+
+"""
+Allow devs to config per view limiter decorators as 
+rate_limit(10/min) OR rate_limit(10/sec)
+"""
+
+multiplier_map = {
+    's': 1, 'sec' : 1, "secs":1, "second":1, "seconds":1,
+    "m":60, "min":60, "mins":60, "minute":60, "minutes":60,
+    "h":3600, "hr": 3600, "hrs":3600, "hour":3600, "hours":3600
+}
+
+def parse_rate_string(rate_str):
+    """
+    Parses strings like '10/m', '10/30s', '5/5min', '100/2h' as 
+    10 request per minute
+    10 request per 30 seconds. ...
+    """
+    if not isinstance(rate_str, str):
+        raise TypeError("rate limit must be a string, such as '10/s'")
+    
+    pattern = r"^(?P<limit>\d+)\s*/\s*(?P<multiplier>\d*)(?P<unit>[a-zA-Z]+)$"
+    
+    match = re.match(pattern, rate_str.strip().lower())
+    
+    if not match:
+        raise ValueError(f"Invalid rate limit format: '{rate_str}'. Use format like '10/m' or '10/30s'")
+
+    data = match.groupdict()
+    limit = int(data["limit"])
+    multiplier_val = int(data["multiplier"]) if data["multiplier"] else 1
+    unit = data["unit"]
+
+    multiplier_map = {
+        's': 1, 'sec': 1, 'secs': 1, 'second': 1, 'seconds': 1,
+        'm': 60, 'min': 60, 'mins': 60, 'minute': 60, 'minutes': 60,
+        'h': 3600, 'hr': 3600, 'hrs': 3600, 'hour': 3600, 'hours': 3600,
+    }
+
+    if unit not in multiplier_map:
+        raise ValueError(f"Unknown time unit: '{unit}'")
+
+    window_seconds = multiplier_val * multiplier_map[unit]
+
+    # result = {"limit": limit, "window_seconds": window_seconds}
+
+    if limit <= 0 or multiplier_val <= 0:
+            raise ValueError("rate limit and duration must be greater than zero")
+        
+        
+    return limit, window_seconds
+
+
+
+
+def rate_limit(rate_string = None):
+    # self. get_response = get_response
+            
+    config = settings.RATE_LIMITER.copy()
+
+    if rate_string is not None:
+        limit, window_seconds = parse_rate_string(rate_string)
+        
+        config['LIMIT'] = limit
+        config["WINDOW_SECONDS"] = window_seconds
+
+    key_function = import_string(config["KEY_FUNCTION"])
+    
+    backend = build_backend(config=config)
+    limiter = build_limiter(config=config, backend=backend)
+    
+    def decorator(view_func):
+        view_scope = f"{view_func.__module__}.{view_func.__qualname__}"
+    
+        @wraps(view_func)
+        def _wrapped_view(request, *args, **kwargs):
+            
+            client_key = key_function(request)
+            scoped_key = f"{view_scope}:{client_key}"
+
+            decision = limiter.check(key=scoped_key)
+
+            if not decision["allowed"]:
+                response = HttpResponse("Too many requests", status=429)
+                response["Retry-After"] = str(decision["retry_after"])
+                return response
+            
+            return view_func(request, *args, **kwargs)
+        
+        return _wrapped_view
+    return decorator
+
+

@@ -1,7 +1,7 @@
 [project]
 name = "django-ratelimiter"
 version = "0.1.0"
-description = "Add your description here"
+description = "Django rate limiting middleware and decorators with fixed-window and sliding-window counter algorithms, backed by in-memory storage or Redis."
 readme = "README.md"
 authors = [
     { name = "Nawaraj karki", email = "nawarajkarkee404@gmail.com" }

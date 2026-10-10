@@ -1,26 +1,85 @@
 # Django Rate Limiter
 
-## Django middleware configuration
+This project is under development. It currently provides Django middleware and a per-view decorator, with fixed-window and sliding-window-counter algorithms. Other planned features are not available yet.
 
-Add the middleware and rate-limit settings to your Django project's `settings.py`:
+## Install
+
+The package is not published yet. During development, install it into your Django project from the local repository, for example:
+
+```bash
+uv add --editable ../django-ratelimiter
+```
+
+Use the path to this repository from your Django project's directory. Once the package is published, installation will use its published package name instead.
+
+## Configure
+
+Add a key function to your Django project. It accepts a request and returns a stable identifier; requests with the same identifier share a rate limit.
+
+```python
+# myproject/ratelimit.py
+def get_rate_limit_key(request):
+    if request.user.is_authenticated:
+        return f"user:{request.user.pk}"
+    return f"ip:{request.META.get('REMOTE_ADDR', '')}"
+```
+
+Configure the limiter in your Django `settings.py`:
+
+```python
+import os
+
+RATE_LIMITER = {
+    "ALGORITHM": "fixed_window",  # or "sliding_window_counter"
+    "LIMIT": 10,
+    "WINDOW_SECONDS": 60,
+    "KEY_FUNCTION": "myproject.ratelimit.get_rate_limit_key",
+    "BACKEND": "redis",  # or "memory"
+    "REDIS_URL": os.environ["RATE_LIMITER_REDIS_URL"],
+}
+```
+
+- `ALGORITHM`: `fixed_window` or `sliding_window_counter`.
+- `LIMIT`: allowed requests per window.
+- `WINDOW_SECONDS`: window duration in seconds.
+- `KEY_FUNCTION`: dotted path to the function that creates a client key.
+- `BACKEND`: `memory` or `redis`. The memory backend is process-local; use Redis when requests are served by multiple processes.
+- `REDIS_URL`: Redis connection URL, required when `BACKEND` is `redis`.
+
+## Use as middleware
+
+Add the middleware to your Django project's `MIDDLEWARE` setting:
 
 ```python
 MIDDLEWARE = [
     # ...
     "django_ratelimiter.integrations.middleware.RateLimitMiddleware",
 ]
-
-RATE_LIMITER = {
-    "ALGORITHM": "fixed_window",
-    "LIMIT": 10,
-    "WINDOW_SECONDS": 60,
-    "KEY_FUNCTION": "myproject.ratelimit.get_rate_limit_key",
-}
 ```
 
-- `ALGORITHM`: rate-limiting algorithm. Currently, only `fixed_window` is implemented.
-- `LIMIT`: maximum allowed requests for one key in a window.
-- `WINDOW_SECONDS`: window duration in seconds.
-- `KEY_FUNCTION`: dotted Python path to a function that accepts a Django request and returns a stable key, such as `user:42` or `ip:203.0.113.10`. Requests returning the same key share a limit.
+It applies the configured limit to requests using the configured key function. Rejected requests receive HTTP `429` and a `Retry-After` header.
 
-The current in-memory backend keeps counts within one process; separate worker processes do not share counters.
+## Use as a view decorator
+
+Use the decorator on individual views when you want to limit only selected endpoints:
+
+```python
+from django_ratelimiter.integrations.decorator import rate_limit
+
+
+@rate_limit()
+def my_view(request):
+    ...
+```
+
+With no argument, it uses `ALGORITHM`, `BACKEND`, `KEY_FUNCTION`, `LIMIT`, and `WINDOW_SECONDS` from `RATE_LIMITER`. To override only the limit and window for a view, pass a rate string:
+
+```python
+@rate_limit("10/m")
+def another_view(request):
+    ...
+```
+
+Supported units include seconds (`s`, `sec`), minutes (`m`, `min`), and hours (`h`, `hr`); a multiplier is also supported, such as `30/5m`. The decorator still uses the algorithm, backend, and key function from `RATE_LIMITER`.
+
+Use either the project-wide middleware or the decorator for a given request path. If both run for the same request, both apply a rate-limit check.

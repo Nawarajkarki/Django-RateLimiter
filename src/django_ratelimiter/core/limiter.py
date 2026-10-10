@@ -1,5 +1,8 @@
+from django.core.exceptions import ImproperlyConfigured
 
 from django_ratelimiter.core.algorithms.fixed_window import FixedWindow
+from django_ratelimiter.core.algorithms.sliding_window_counter import SlidingWindowCounter
+
 
 
 def build_limiter(config, backend):
@@ -15,13 +18,16 @@ def build_limiter(config, backend):
             backend=backend,
         )
 
-    # elif normalized_algo == "sliding_window":
-        
-    #     pass
+    elif normalized_algo == "sliding_window_counter":
+        return SlidingWindowCounter(
+            limit = config["LIMIT"],
+            window_size = config["WINDOW_SECONDS"],
+            backend = backend
+        )
     
     # elif normalized_algo == "token_bucket":
         
     #     pass
     
     
-    raise ValueError(f"Unsupported rate-limit algorithm: {algorithm}")
+    raise ImproperlyConfigured(f"Unsupported rate-limit algorithm: {algorithm}")

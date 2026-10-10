@@ -1,14 +1,18 @@
 
 ### _state dict format will be 
-# {
+# { # for fixed window algo
 #     "user_123" : {
 #         "window_id" = 1223,
 #         "request_count" = 12
-#     },
-#     "user_233" : {
-#         "window_id" : 323,
-#         "request_count" : 14
 #     }
+
+# { # sliding window counter
+#     "user1" : {
+#     "window_id": 16,
+#     "current_count": 2,
+#     "previous_count": 4,
+# }
+# }
 
 
 from threading import Lock

@@ -1,6 +1,8 @@
 import json
 
-from redis.exceptions import WatchError
+from redis.exceptions import RedisError, WatchError
+
+from django_ratelimiter.exceptions import RateLimiterBackendError
 
 class RedisBackend:
     def __init__(self, client, key_prefix="django_ratelimiter"):
@@ -11,8 +13,11 @@ class RedisBackend:
         return f"{self.key_prefix}:{key}"
     
     def get(self, key):
-        raw_state = self.client.get(self._redis_key(key))
-        
+        try:
+            raw_state = self.client.get(self._redis_key(key))
+        except RedisError as exc:
+            raise RateLimiterBackendError("Redis operation failed.") from exc
+                
         if raw_state is None:
             return None
         
@@ -22,18 +27,22 @@ class RedisBackend:
         options = {}
         if timeout is not None:
             options["ex"] = timeout
-            
-        self.client.set(
-            self._redis_key(key),
-            json.dumps(state),
-            **options,
-        )
+        
+        try:
+            self.client.set(
+                self._redis_key(key),
+                json.dumps(state),
+                **options,
+            )
+        except RedisError as exc:
+            raise RateLimiterBackendError("Redis operation failed.") from exc
+        
         
     def update(self, key, updater):
         redis_key = self._redis_key(key)
         while True:
-            with self.client.pipeline() as pipe:
-                try:
+            try:
+                with self.client.pipeline() as pipe:
                     pipe.watch(redis_key)
                     
                     raw_state = pipe.get(redis_key)
@@ -57,7 +66,9 @@ class RedisBackend:
                     
                     return result
                 
-                except WatchError:
-                    continue
-                    
+            except WatchError:
+                continue
+            
+            except RedisError as exc:
+                raise RateLimiterBackendError("Redis operation failed.") from exc
                         

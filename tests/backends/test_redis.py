@@ -1,13 +1,20 @@
 
 import uuid
-
 import pytest
+
 from redis import Redis
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import MagicMock
+from redis.exceptions import ResponseError, TimeoutError as RedisTimeoutError, WatchError
 
 from django_ratelimiter.backends.redis import RedisBackend
 from django_ratelimiter.core.algorithms.fixed_window import FixedWindow
 from django_ratelimiter.core.algorithms.sliding_window_counter import SlidingWindowCounter
+from django_ratelimiter.exceptions import RateLimiterBackendError
+
+
+
+
 
 
 @pytest.fixture
@@ -155,3 +162,67 @@ def test_sliding_window_counter_uses_redis_backend(
         "previous_count": 5,
         "current_count": 2,
     }
+    
+@pytest.mark.parametrize(
+    "error",
+    [
+        ResponseError("OOM command not allowed"),
+        RedisTimeoutError("Redis timed out"),
+    ],
+)
+def test_get_wraps_redis_errors(error):
+    client = MagicMock()
+    client.get.side_effect = error
+    backend = RedisBackend(client)
+
+    with pytest.raises(RateLimiterBackendError):
+        backend.get("client-1")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ResponseError("OOM command not allowed"),
+        RedisTimeoutError("Redis timed out"),
+    ],
+)
+def test_set_wraps_redis_errors(error):
+    client = MagicMock()
+    client.set.side_effect = error
+    backend = RedisBackend(client)
+
+    with pytest.raises(RateLimiterBackendError):
+        backend.set("client-1", {"request_count": 1})
+
+
+
+def test_update_wraps_redis_errors():
+    client = MagicMock()
+    pipe = client.pipeline.return_value.__enter__.return_value
+    pipe.get.return_value = None
+    pipe.execute.side_effect = ResponseError("OOM command not allowed")
+    backend = RedisBackend(client)
+
+    def updater(state):
+        return {"request_count": 1}, {"allowed": True}, 60
+
+    with pytest.raises(RateLimiterBackendError):
+        backend.update("client-1", updater)
+        
+        
+        
+def test_update_retries_watch_error():
+    client = MagicMock()
+    pipe = client.pipeline.return_value.__enter__.return_value
+    pipe.watch.side_effect = [WatchError(), None]
+    pipe.get.return_value = None
+    backend = RedisBackend(client)
+
+    def updater(state):
+        return {"request_count": 1}, {"allowed": True}, 60
+
+    result = backend.update("client-1", updater)
+
+    assert result == {"allowed": True}
+    assert pipe.watch.call_count == 2
+    assert pipe.execute.call_count == 1

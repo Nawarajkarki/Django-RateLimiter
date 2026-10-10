@@ -1,6 +1,9 @@
+import inspect
 import pytest
 from django.http import HttpResponse
 from django.conf import settings
+from asgiref.sync import async_to_sync
+
 
 from django_ratelimiter.integrations.decorator import parse_rate_string, rate_limit
 from django_ratelimiter.backends.memory import MemoryBackend
@@ -156,3 +159,31 @@ def test_decorator_uses_sliding_window_counter(settings, monkeypatch, rf):
     assert sample_view(request).status_code == 200
     assert sample_view(request).status_code == 200
     assert sample_view(request).status_code == 429
+
+
+
+def test_decorator_supports_async_view(rf):
+    calls = []
+
+    @rate_limit("1/m")
+    async def async_view(request):
+        calls.append("called")
+        return HttpResponse("async ok")
+
+    assert inspect.iscoroutinefunction(async_view)
+    
+    request = rf.get("/async/")
+
+    async def send_requests():
+        first = await async_view(request)
+        second = await async_view(request)
+        return first, second
+
+    response1, response2 = async_to_sync(send_requests)()
+
+    assert response1.status_code == 200
+    assert response1.content.decode() == "async ok"
+
+    assert response2.status_code == 429
+    assert response2["Retry-After"]
+    assert calls == ["called"]  

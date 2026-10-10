@@ -1,5 +1,8 @@
 import re
 from functools import wraps
+import inspect
+from asgiref.sync import sync_to_async
+
 
 from django.conf import settings
 from django.http import HttpResponse
@@ -79,25 +82,44 @@ def rate_limit(rate_string = None):
     backend = build_backend(config=config)
     limiter = build_limiter(config=config, backend=backend)
     
+    async_key_function = sync_to_async(key_function, thread_sensitive=True)
+    async_limiter_check = sync_to_async(limiter.check, thread_sensitive=False)
+    
+    
     def decorator(view_func):
         view_scope = f"{view_func.__module__}.{view_func.__qualname__}"
-    
+
+        def make_rejection_response(decision):
+            response = HttpResponse("Too many requests", status=429)
+            response["Retry-After"] = str(decision["retry_after"])
+            return response
+
+        if inspect.iscoroutinefunction(view_func):
+
+            @wraps(view_func)
+            async def _wrapped_async_view(request, *args, **kwargs):
+                client_key = await async_key_function(request)
+                scoped_key = f"{view_scope}:{client_key}"
+                decision = await async_limiter_check(key=scoped_key)
+
+                if not decision["allowed"]:
+                    return make_rejection_response(decision)
+
+                return await view_func(request, *args, **kwargs)
+
+            return _wrapped_async_view
+
         @wraps(view_func)
-        def _wrapped_view(request, *args, **kwargs):
-            
+        def _wrapped_sync_view(request, *args, **kwargs):
             client_key = key_function(request)
             scoped_key = f"{view_scope}:{client_key}"
-
             decision = limiter.check(key=scoped_key)
 
             if not decision["allowed"]:
-                response = HttpResponse("Too many requests", status=429)
-                response["Retry-After"] = str(decision["retry_after"])
-                return response
-            
-            return view_func(request, *args, **kwargs)
-        
-        return _wrapped_view
-    return decorator
+                return make_rejection_response(decision)
 
+            return view_func(request, *args, **kwargs)
+
+        return _wrapped_sync_view
+    return decorator
 
